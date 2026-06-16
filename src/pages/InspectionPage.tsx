@@ -31,6 +31,7 @@ export default function InspectionPage() {
     removePhoto,
     setCurrentStep,
     generateQuoteEstimate,
+    saveCurrentOrder,
     resetAll
   } = useRepairStore();
 
@@ -38,9 +39,11 @@ export default function InspectionPage() {
     setCurrentStep(2);
   }, [setCurrentStep]);
 
-  const allChecked = true;
+  const checkedCount = parts.filter(p => inspectionRecord[p].status !== 'unchecked').length;
+  const allChecked = checkedCount === parts.length;
 
   const handleNext = () => {
+    saveCurrentOrder();
     generateQuoteEstimate();
     setCurrentStep(3);
     navigate('/quote');
@@ -217,14 +220,14 @@ export default function InspectionPage() {
           <div className="flex items-center justify-between">
             <span className="text-sm text-neutral-600">检查进度</span>
             <span className="text-sm font-semibold text-primary-600">
-              {parts.filter(p => inspectionRecord[p].status !== 'pending').length} / {parts.length}
+              已检查 {checkedCount}/{parts.length}
             </span>
           </div>
           <div className="w-full h-2 bg-neutral-100 rounded-full mt-2 overflow-hidden">
             <div
               className="h-full bg-gradient-to-r from-primary-500 to-coral-500 rounded-full transition-all duration-500"
               style={{
-                width: `${(parts.filter(p => inspectionRecord[p].status !== 'pending').length / parts.length) * 100}%`
+                width: `${(checkedCount / parts.length) * 100}%`
               }}
             />
           </div>
@@ -246,7 +249,7 @@ export default function InspectionPage() {
           </button>
         </div>
         <p className="text-center text-xs text-neutral-400 mt-2">
-          选择"待拆检"表示该部位需进一步拆解检查，报价中将包含风险备用金
+          请完成所有部位的检查，选择"待拆检"表示需进一步拆解检查，报价中将包含风险备用金
         </p>
       </div>
     </div>

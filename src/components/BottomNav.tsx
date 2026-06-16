@@ -1,11 +1,11 @@
 import { NavLink } from 'react-router-dom';
-import { ClipboardList, Search, Calculator, UserCheck, History } from 'lucide-react';
+import { ClipboardList, Search, Calculator, UserCheck, History, ListTodo } from 'lucide-react';
 
 const navItems = [
+  { path: '/orders', label: '工单', icon: ListTodo, step: 0 },
   { path: '/register', label: '登记', icon: ClipboardList, step: 1 },
   { path: '/inspection', label: '检查', icon: Search, step: 2 },
   { path: '/quote', label: '报价', icon: Calculator, step: 3 },
-  { path: '/confirm', label: '确认', icon: UserCheck, step: 4 },
   { path: '/followup', label: '追踪', icon: History, step: 5 },
 ];
 

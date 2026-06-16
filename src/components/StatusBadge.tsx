@@ -1,4 +1,4 @@
-import { Check, AlertTriangle, XCircle, Clock } from 'lucide-react';
+import { Check, AlertTriangle, XCircle, Clock, Minus } from 'lucide-react';
 import { InspectionStatus, STATUS_LABELS } from '../types';
 
 interface StatusBadgeProps {
@@ -8,6 +8,7 @@ interface StatusBadgeProps {
 }
 
 const statusConfig: Record<InspectionStatus, { bg: string; icon: typeof Check }> = {
+  unchecked: { bg: 'bg-neutral-50 text-neutral-400 border border-neutral-200', icon: Minus },
   normal: { bg: 'status-normal', icon: Check },
   mild: { bg: 'status-mild', icon: AlertTriangle },
   severe: { bg: 'status-severe', icon: XCircle },
@@ -41,7 +42,7 @@ interface StatusSelectorProps {
 }
 
 export function StatusSelector({ value, onChange, size = 'md' }: StatusSelectorProps) {
-  const statuses: InspectionStatus[] = ['normal', 'mild', 'severe', 'pending'];
+  const statuses: InspectionStatus[] = ['unchecked', 'normal', 'mild', 'severe', 'pending'];
 
   const sizeClasses = {
     sm: 'px-2.5 py-1 text-xs',

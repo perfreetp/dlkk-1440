@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   History, Droplets, Zap, Activity, CheckCircle,
-  Clock, ArrowLeft, RotateCcw, User, FileText, XCircle
+  Clock, ArrowLeft, RotateCcw, User, FileText, XCircle,
+  Phone, MessageCircle, MapPin, MoreHorizontal
 } from 'lucide-react';
 import StepIndicator from '../components/StepIndicator';
 import Timeline, { TimelineItem } from '../components/Timeline';
 import StatusBadge from '../components/StatusBadge';
 import { useRepairStore } from '../store/useRepairStore';
-import { CustomerChoice, CLEANING_METHODS, FUNCTION_TEST_ITEMS } from '../types';
+import { CustomerChoice, CLEANING_METHODS, FUNCTION_TEST_ITEMS, CHANNEL_LABELS } from '../types';
 
 const customerChoiceOptions: { value: CustomerChoice; label: string; color: string }[] = [
   { value: 'repair', label: '继续维修', color: 'primary' },
@@ -45,10 +46,16 @@ export default function FollowupPage() {
     setFinalStatus,
     completeFollowup,
     setCurrentStep,
-    resetAll
+    resetAll,
+    saveCurrentOrder,
+    addCommunicationLog,
+    removeCommunicationLog
   } = useRepairStore();
 
   const [showCompleteModal, setShowCompleteModal] = useState(false);
+  const [newLogDate, setNewLogDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [newLogChannel, setNewLogChannel] = useState<'phone' | 'wechat' | 'visit' | 'other'>('phone');
+  const [newLogContent, setNewLogContent] = useState('');
 
   useEffect(() => {
     setCurrentStep(5);
@@ -56,10 +63,12 @@ export default function FollowupPage() {
 
   const handleComplete = () => {
     completeFollowup();
+    saveCurrentOrder();
     setShowCompleteModal(false);
   };
 
   const handleNewOrder = () => {
+    saveCurrentOrder();
     resetAll();
     navigate('/register');
   };
@@ -437,6 +446,105 @@ export default function FollowupPage() {
 
       <div className="card fade-in-up stagger-5 mb-5">
         <h3 className="section-title mb-4">
+          📋 沟通记录
+          <span className="ml-2 text-xs bg-primary-100 text-primary-700 px-2 py-0.5 rounded-full">
+            {followupRecord.communicationLogs.length}
+          </span>
+        </h3>
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">日期</label>
+              <input
+                type="date"
+                className="input-field"
+                value={newLogDate}
+                onChange={(e) => setNewLogDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="label">渠道</label>
+              <div className="flex flex-wrap gap-1.5">
+                {(Object.keys(CHANNEL_LABELS) as Array<'phone' | 'wechat' | 'visit' | 'other'>).map((ch) => (
+                  <button
+                    key={ch}
+                    onClick={() => setNewLogChannel(ch)}
+                    className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-all ${
+                      newLogChannel === ch
+                        ? 'bg-primary-100 text-primary-700 ring-1 ring-primary-300'
+                        : 'bg-neutral-100 text-neutral-500 hover:bg-neutral-200'
+                    }`}
+                  >
+                    {CHANNEL_LABELS[ch]}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div>
+            <label className="label">内容</label>
+            <textarea
+              className="input-field min-h-[60px]"
+              placeholder="记录沟通内容..."
+              value={newLogContent}
+              onChange={(e) => setNewLogContent(e.target.value)}
+            />
+          </div>
+          <button
+            onClick={() => {
+              if (!newLogContent.trim()) return;
+              addCommunicationLog({ date: newLogDate, channel: newLogChannel, content: newLogContent });
+              setNewLogDate(new Date().toISOString().slice(0, 10));
+              setNewLogChannel('phone');
+              setNewLogContent('');
+            }}
+            disabled={!newLogContent.trim()}
+            className="btn-primary w-full"
+          >
+            添加记录
+          </button>
+        </div>
+
+        {followupRecord.communicationLogs.length > 0 && (
+          <div className="mt-4 space-y-3">
+            {followupRecord.communicationLogs.map((log) => {
+              const channelIcon = {
+                phone: Phone,
+                wechat: MessageCircle,
+                visit: MapPin,
+                other: MoreHorizontal,
+              }[log.channel];
+
+              return (
+                <div
+                  key={log.id}
+                  className="flex items-start gap-3 p-3 bg-neutral-50 rounded-xl border border-neutral-100"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-primary-100 text-primary-600 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    {(() => { const Icon = channelIcon; return <Icon size={16} />; })()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 text-xs text-neutral-500 mb-1">
+                      <span>{log.date}</span>
+                      <span className="text-primary-600 font-medium">{CHANNEL_LABELS[log.channel]}</span>
+                    </div>
+                    <p className="text-sm text-neutral-800 break-words">{log.content}</p>
+                  </div>
+                  <button
+                    onClick={() => removeCommunicationLog(log.id)}
+                    className="flex-shrink-0 w-6 h-6 rounded-full bg-neutral-200 hover:bg-danger-100 text-neutral-400 hover:text-danger-500 flex items-center justify-center transition-all"
+                  >
+                    <XCircle size={14} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="card fade-in-up stagger-6 mb-5">
+        <h3 className="section-title mb-4">
           <User size={20} className="text-success-500" />
           客户选择
         </h3>
@@ -470,7 +578,7 @@ export default function FollowupPage() {
         </div>
       </div>
 
-      <div className="pb-8 fade-in-up stagger-6">
+      <div className="pb-8 fade-in-up stagger-7">
         <div className="flex gap-3 mb-4">
           <button
             onClick={() => navigate('/confirm')}

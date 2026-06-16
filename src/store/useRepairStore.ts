@@ -11,6 +11,8 @@ import {
   FollowupRecord,
   CustomerChoice,
   FunctionTestItem,
+  CommunicationLog,
+  RepairOrderSnapshot,
   FUNCTION_TEST_ITEMS,
   AbandonRecord
 } from '../types';
@@ -18,7 +20,7 @@ import { generateId } from '../utils/idGenerator';
 import { generateQuote } from '../utils/quoteCalculator';
 
 const createEmptyInspectionItem = (): InspectionItem => ({
-  status: 'pending',
+  status: 'unchecked',
   photos: [],
   remark: ''
 });
@@ -76,16 +78,37 @@ const createEmptyFollowupRecord = (): FollowupRecord => ({
   customerChoice: 'pending',
   finalStatus: '',
   completedAt: null,
-  abandonRecord: null
+  abandonRecord: null,
+  communicationLogs: []
+});
+
+const createNewOrder = (): RepairOrder => ({
+  id: generateId(),
+  createdAt: new Date().toISOString(),
+  phoneModel: '',
+  customerName: '',
+  contact: '',
+  status: 'registered',
+  currentStep: 1
 });
 
 interface RepairStore {
+  currentOrderId: string | null;
+  orders: Record<string, RepairOrderSnapshot>;
+
   order: RepairOrder;
   waterDamageInfo: WaterDamageInfo;
   inspectionRecord: InspectionRecord;
   quoteEstimate: QuoteEstimate | null;
   customerConfirm: CustomerConfirm;
   followupRecord: FollowupRecord;
+
+  saveCurrentOrder: () => void;
+  loadOrder: (orderId: string) => void;
+  deleteOrder: (orderId: string) => void;
+  getOrderList: () => RepairOrderSnapshot[];
+  createAndSwitchOrder: () => string;
+  restoreFromAbandon: (orderId: string, targetStep: 'quote' | 'followup') => void;
 
   setOrderInfo: (info: Partial<RepairOrder>) => void;
   setWaterDamageInfo: (info: Partial<WaterDamageInfo>) => void;
@@ -112,31 +135,179 @@ interface RepairStore {
   completeFollowup: () => void;
   setAbandonRecord: (record: Omit<AbandonRecord, 'abandonedAt'>) => void;
 
+  addCommunicationLog: (log: Omit<CommunicationLog, 'id'>) => void;
+  removeCommunicationLog: (logId: string) => void;
+
   setCurrentStep: (step: number) => void;
   setStatus: (status: RepairOrder['status']) => void;
   resetAll: () => void;
   createNewOrder: () => void;
 }
 
-const createNewOrder = (): RepairOrder => ({
-  id: generateId(),
-  createdAt: new Date().toISOString(),
-  phoneModel: '',
-  customerName: '',
-  contact: '',
-  status: 'registered',
-  currentStep: 1
-});
-
 export const useRepairStore = create<RepairStore>()(
   persist(
     (set, get) => ({
+      currentOrderId: null,
+      orders: {},
+
       order: createNewOrder(),
       waterDamageInfo: createEmptyWaterDamageInfo(),
       inspectionRecord: createEmptyInspectionRecord(),
       quoteEstimate: null,
       customerConfirm: createEmptyCustomerConfirm(),
       followupRecord: createEmptyFollowupRecord(),
+
+      saveCurrentOrder: () => {
+        const state = get();
+        if (!state.order.id) return;
+        const snapshot: RepairOrderSnapshot = {
+          order: state.order,
+          waterDamageInfo: state.waterDamageInfo,
+          inspectionRecord: state.inspectionRecord,
+          quoteEstimate: state.quoteEstimate,
+          customerConfirm: state.customerConfirm,
+          followupRecord: state.followupRecord
+        };
+        set({
+          orders: { ...state.orders, [state.order.id]: snapshot },
+          currentOrderId: state.order.id
+        });
+      },
+
+      loadOrder: (orderId: string) => {
+        const state = get();
+        if (state.order.id && state.order.id !== orderId) {
+          const currentSnapshot: RepairOrderSnapshot = {
+            order: state.order,
+            waterDamageInfo: state.waterDamageInfo,
+            inspectionRecord: state.inspectionRecord,
+            quoteEstimate: state.quoteEstimate,
+            customerConfirm: state.customerConfirm,
+            followupRecord: state.followupRecord
+          };
+          const updatedOrders = {
+            ...state.orders,
+            [state.order.id]: currentSnapshot
+          };
+          const targetSnapshot = updatedOrders[orderId];
+          if (targetSnapshot) {
+            set({
+              currentOrderId: orderId,
+              orders: updatedOrders,
+              order: targetSnapshot.order,
+              waterDamageInfo: targetSnapshot.waterDamageInfo,
+              inspectionRecord: targetSnapshot.inspectionRecord,
+              quoteEstimate: targetSnapshot.quoteEstimate,
+              customerConfirm: targetSnapshot.customerConfirm,
+              followupRecord: targetSnapshot.followupRecord
+            });
+          }
+        } else {
+          const snapshot = state.orders[orderId];
+          if (snapshot) {
+            set({
+              currentOrderId: orderId,
+              order: snapshot.order,
+              waterDamageInfo: snapshot.waterDamageInfo,
+              inspectionRecord: snapshot.inspectionRecord,
+              quoteEstimate: snapshot.quoteEstimate,
+              customerConfirm: snapshot.customerConfirm,
+              followupRecord: snapshot.followupRecord
+            });
+          }
+        }
+      },
+
+      deleteOrder: (orderId: string) => {
+        const state = get();
+        const { [orderId]: _, ...rest } = state.orders;
+        if (state.currentOrderId === orderId) {
+          set({ orders: rest, currentOrderId: null });
+        } else {
+          set({ orders: rest });
+        }
+      },
+
+      getOrderList: () => {
+        const state = get();
+        return Object.values(state.orders).sort((a, b) =>
+          new Date(b.order.createdAt).getTime() - new Date(a.order.createdAt).getTime()
+        );
+      },
+
+      createAndSwitchOrder: () => {
+        const state = get();
+        if (state.order.id) {
+          const currentSnapshot: RepairOrderSnapshot = {
+            order: state.order,
+            waterDamageInfo: state.waterDamageInfo,
+            inspectionRecord: state.inspectionRecord,
+            quoteEstimate: state.quoteEstimate,
+            customerConfirm: state.customerConfirm,
+            followupRecord: state.followupRecord
+          };
+          const newOrder = createNewOrder();
+          set({
+            orders: { ...state.orders, [state.order.id]: currentSnapshot },
+            currentOrderId: newOrder.id,
+            order: newOrder,
+            waterDamageInfo: createEmptyWaterDamageInfo(),
+            inspectionRecord: createEmptyInspectionRecord(),
+            quoteEstimate: null,
+            customerConfirm: createEmptyCustomerConfirm(),
+            followupRecord: createEmptyFollowupRecord()
+          });
+          return newOrder.id;
+        }
+        const newOrder = createNewOrder();
+        set({
+          currentOrderId: newOrder.id,
+          order: newOrder,
+          waterDamageInfo: createEmptyWaterDamageInfo(),
+          inspectionRecord: createEmptyInspectionRecord(),
+          quoteEstimate: null,
+          customerConfirm: createEmptyCustomerConfirm(),
+          followupRecord: createEmptyFollowupRecord()
+        });
+        return newOrder.id;
+      },
+
+      restoreFromAbandon: (orderId: string, targetStep: 'quote' | 'followup') => {
+        const state = get();
+        const snapshot = state.orders[orderId];
+        if (!snapshot || snapshot.order.status !== 'abandoned') return;
+
+        const abandonReason = snapshot.followupRecord.abandonRecord?.reason || '';
+
+        const restoredSnapshot: RepairOrderSnapshot = {
+          ...snapshot,
+          order: {
+            ...snapshot.order,
+            status: targetStep === 'quote' ? 'quoted' : 'confirmed',
+            currentStep: targetStep === 'quote' ? 3 : 5,
+            previousAbandonReason: abandonReason
+          },
+          followupRecord: {
+            ...snapshot.followupRecord,
+            abandonRecord: null,
+            completedAt: null,
+            customerChoice: 'pending'
+          }
+        };
+
+        const updatedOrders = { ...state.orders, [orderId]: restoredSnapshot };
+
+        set({
+          orders: updatedOrders,
+          currentOrderId: orderId,
+          order: restoredSnapshot.order,
+          waterDamageInfo: restoredSnapshot.waterDamageInfo,
+          inspectionRecord: restoredSnapshot.inspectionRecord,
+          quoteEstimate: restoredSnapshot.quoteEstimate,
+          customerConfirm: restoredSnapshot.customerConfirm,
+          followupRecord: restoredSnapshot.followupRecord
+        });
+      },
 
       setOrderInfo: (info) => set((state) => ({
         order: { ...state.order, ...info }
@@ -303,6 +474,23 @@ export const useRepairStore = create<RepairStore>()(
         }
       })),
 
+      addCommunicationLog: (log) => set((state) => ({
+        followupRecord: {
+          ...state.followupRecord,
+          communicationLogs: [
+            ...state.followupRecord.communicationLogs,
+            { ...log, id: generateId() }
+          ]
+        }
+      })),
+
+      removeCommunicationLog: (logId) => set((state) => ({
+        followupRecord: {
+          ...state.followupRecord,
+          communicationLogs: state.followupRecord.communicationLogs.filter(l => l.id !== logId)
+        }
+      })),
+
       setCurrentStep: (step) => set((state) => ({
         order: { ...state.order, currentStep: step }
       })),
@@ -322,12 +510,14 @@ export const useRepairStore = create<RepairStore>()(
 
       createNewOrder: () => {
         const state = get();
-        state.resetAll();
+        state.createAndSwitchOrder();
       }
     }),
     {
       name: 'repair-store',
       partialize: (state) => ({
+        currentOrderId: state.currentOrderId,
+        orders: state.orders,
         order: state.order,
         waterDamageInfo: state.waterDamageInfo,
         inspectionRecord: state.inspectionRecord,

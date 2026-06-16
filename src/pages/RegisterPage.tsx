@@ -17,7 +17,8 @@ export default function RegisterPage() {
     toggleSymptom,
     setCurrentStep,
     setStatus,
-    resetAll
+    resetAll,
+    saveCurrentOrder
   } = useRepairStore();
 
   useEffect(() => {
@@ -29,12 +30,14 @@ export default function RegisterPage() {
     waterDamageInfo.symptoms.length > 0;
 
   const handleNext = () => {
+    saveCurrentOrder();
     setStatus('inspecting');
     setCurrentStep(2);
     navigate('/inspection');
   };
 
   const handleNewOrder = () => {
+    saveCurrentOrder();
     resetAll();
     navigate('/register');
   };

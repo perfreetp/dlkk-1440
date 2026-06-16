@@ -1,6 +1,6 @@
 export type RepairStatus = 'registered' | 'inspecting' | 'quoted' | 'confirmed' | 'followup' | 'completed' | 'abandoned';
 
-export type InspectionStatus = 'normal' | 'mild' | 'severe' | 'pending';
+export type InspectionStatus = 'unchecked' | 'normal' | 'mild' | 'severe' | 'pending';
 
 export type InspectionPart = 'appearance' | 'screen' | 'motherboard' | 'interface' | 'battery' | 'camera' | 'speaker';
 
@@ -14,6 +14,7 @@ export interface RepairOrder {
   contact: string;
   status: RepairStatus;
   currentStep: number;
+  previousAbandonReason?: string;
 }
 
 export interface WaterDamageInfo {
@@ -103,6 +104,13 @@ export interface FunctionTestItem {
   remark: string;
 }
 
+export interface CommunicationLog {
+  id: string;
+  date: string;
+  channel: 'phone' | 'wechat' | 'visit' | 'other';
+  content: string;
+}
+
 export interface FollowupRecord {
   cleaningResult: CleaningRecord;
   secondInspection: SecondInspection;
@@ -111,6 +119,16 @@ export interface FollowupRecord {
   finalStatus: string;
   completedAt: string | null;
   abandonRecord: AbandonRecord | null;
+  communicationLogs: CommunicationLog[];
+}
+
+export interface RepairOrderSnapshot {
+  order: RepairOrder;
+  waterDamageInfo: WaterDamageInfo;
+  inspectionRecord: InspectionRecord;
+  quoteEstimate: QuoteEstimate | null;
+  customerConfirm: CustomerConfirm;
+  followupRecord: FollowupRecord;
 }
 
 export interface SpeechTemplate {
@@ -141,10 +159,38 @@ export const PART_NAMES: Record<InspectionPart, string> = {
 };
 
 export const STATUS_LABELS: Record<InspectionStatus, string> = {
+  unchecked: '未检查',
   normal: '正常',
   mild: '轻微腐蚀',
   severe: '严重腐蚀',
   pending: '待拆检'
+};
+
+export const REPAIR_STATUS_LABELS: Record<RepairStatus, string> = {
+  registered: '已登记',
+  inspecting: '检查中',
+  quoted: '已报价',
+  confirmed: '已确认',
+  followup: '复检中',
+  completed: '已完成',
+  abandoned: '已放弃'
+};
+
+export const REPAIR_STATUS_COLORS: Record<RepairStatus, string> = {
+  registered: 'bg-neutral-100 text-neutral-600',
+  inspecting: 'bg-primary-100 text-primary-600',
+  quoted: 'bg-coral-100 text-coral-600',
+  confirmed: 'bg-warning-100 text-warning-600',
+  followup: 'bg-primary-100 text-primary-700',
+  completed: 'bg-success-100 text-success-600',
+  abandoned: 'bg-danger-100 text-danger-600'
+};
+
+export const CHANNEL_LABELS: Record<CommunicationLog['channel'], string> = {
+  phone: '电话',
+  wechat: '微信',
+  visit: '到店',
+  other: '其他'
 };
 
 export const WATER_TIME_OPTIONS = [

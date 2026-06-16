@@ -45,7 +45,8 @@ export default function ConfirmPage() {
     confirmCustomer,
     setCurrentStep,
     quoteEstimate,
-    resetAll
+    resetAll,
+    saveCurrentOrder
   } = useRepairStore();
 
   const [activeCategory, setActiveCategory] = useState<string>('全部');
@@ -57,6 +58,7 @@ export default function ConfirmPage() {
   }, [setCurrentStep]);
 
   const handleNewOrder = () => {
+    saveCurrentOrder();
     resetAll();
     navigate('/register');
   };
@@ -123,6 +125,7 @@ export default function ConfirmPage() {
 
   const handleNext = () => {
     confirmCustomer();
+    saveCurrentOrder();
     setCurrentStep(5);
     navigate('/followup');
   };

@@ -20,11 +20,20 @@ const BASE_PRICES = {
 };
 
 const SEVERITY_MULTIPLIER: Record<InspectionStatus, number> = {
+  unchecked: 0,
   normal: 0,
   mild: 1,
   severe: 1.5,
   pending: 1.2
 };
+
+function isChecked(status: InspectionStatus): boolean {
+  return status !== 'unchecked';
+}
+
+function isAbnormal(status: InspectionStatus): boolean {
+  return status !== 'unchecked' && status !== 'normal';
+}
 
 function countSeverity(record: InspectionRecord) {
   let mildCount = 0;
@@ -66,7 +75,7 @@ function countSeverity(record: InspectionRecord) {
 }
 
 function addFlexCableItems(items: QuoteItem[], record: InspectionRecord, tier: 'low' | 'mid' | 'high') {
-  if (record.screen.status !== 'normal') {
+  if (isAbnormal(record.screen.status)) {
     const price = tier === 'low' ? BASE_PRICES.flexCable :
                   tier === 'mid' ? BASE_PRICES.flexCableScreen :
                   BASE_PRICES.flexCableScreen + 50;
@@ -78,7 +87,7 @@ function addFlexCableItems(items: QuoteItem[], record: InspectionRecord, tier: '
     });
   }
 
-  if (record.interface.status !== 'normal') {
+  if (isAbnormal(record.interface.status)) {
     const price = tier === 'low' ? BASE_PRICES.flexCable :
                   tier === 'mid' ? BASE_PRICES.flexCableInterface :
                   BASE_PRICES.flexCableInterface + 30;
@@ -90,7 +99,7 @@ function addFlexCableItems(items: QuoteItem[], record: InspectionRecord, tier: '
     });
   }
 
-  if (record.motherboard.status !== 'normal') {
+  if (isAbnormal(record.motherboard.status)) {
     const price = tier === 'low' ? 0 :
                   tier === 'mid' ? BASE_PRICES.flexCableMotherboard :
                   BASE_PRICES.flexCableMotherboard + 50;
@@ -104,7 +113,7 @@ function addFlexCableItems(items: QuoteItem[], record: InspectionRecord, tier: '
     }
   }
 
-  if (record.camera.status !== 'normal' && tier !== 'low') {
+  if (isAbnormal(record.camera.status) && tier !== 'low') {
     items.push({
       name: '摄像头排线清洁',
       description: '前后摄像头排线接口腐蚀处理',
@@ -113,7 +122,7 @@ function addFlexCableItems(items: QuoteItem[], record: InspectionRecord, tier: '
     });
   }
 
-  if (record.speaker.status !== 'normal' && tier !== 'low') {
+  if (isAbnormal(record.speaker.status) && tier !== 'low') {
     items.push({
       name: '音频排线检修',
       description: '扬声器、听筒排线清洁修复',
@@ -152,7 +161,7 @@ function generateLowTier(record: InspectionRecord): QuoteTier {
 
   addFlexCableItems(items, record, 'low');
 
-  if (record.interface.status !== 'normal') {
+  if (isAbnormal(record.interface.status)) {
     items.push({
       name: '接口清洁处理',
       description: '充电口/耳机口腐蚀清洁',
@@ -197,7 +206,7 @@ function generateMidTier(record: InspectionRecord): QuoteTier {
 
   addFlexCableItems(items, record, 'mid');
 
-  if (record.battery.status !== 'normal') {
+  if (isAbnormal(record.battery.status)) {
     items.push({
       name: '电池检测/更换',
       description: '进水电池存在安全隐患，建议更换',
@@ -206,7 +215,7 @@ function generateMidTier(record: InspectionRecord): QuoteTier {
     });
   }
 
-  if (record.interface.status !== 'normal') {
+  if (isAbnormal(record.interface.status)) {
     items.push({
       name: '接口检修',
       description: '充电/数据接口修复或更换',
@@ -258,7 +267,7 @@ function generateHighTier(record: InspectionRecord): QuoteTier {
 
   addFlexCableItems(items, record, 'high');
 
-  if (record.screen.status !== 'normal') {
+  if (isAbnormal(record.screen.status)) {
     items.push({
       name: '屏幕总成检测/更换',
       description: '屏幕显示异常修复或更换总成',
@@ -267,7 +276,7 @@ function generateHighTier(record: InspectionRecord): QuoteTier {
     });
   }
 
-  if (record.camera.status !== 'normal') {
+  if (isAbnormal(record.camera.status)) {
     items.push({
       name: '摄像头修复',
       description: '前后摄像头清理或更换',
@@ -276,7 +285,7 @@ function generateHighTier(record: InspectionRecord): QuoteTier {
     });
   }
 
-  if (record.speaker.status !== 'normal') {
+  if (isAbnormal(record.speaker.status)) {
     items.push({
       name: '扬声器/听筒修复',
       description: '音频组件清理或更换',

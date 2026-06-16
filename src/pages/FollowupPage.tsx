@@ -3,13 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import {
   History, Droplets, Zap, Activity, CheckCircle,
   Clock, ArrowLeft, RotateCcw, User, FileText, XCircle,
-  Phone, MessageCircle, MapPin, MoreHorizontal
+  Phone, MessageCircle, MapPin, MoreHorizontal, AlertCircle, Calendar, Bell, BellOff
 } from 'lucide-react';
 import StepIndicator from '../components/StepIndicator';
 import Timeline, { TimelineItem } from '../components/Timeline';
 import StatusBadge from '../components/StatusBadge';
 import { useRepairStore } from '../store/useRepairStore';
-import { CustomerChoice, CLEANING_METHODS, FUNCTION_TEST_ITEMS, CHANNEL_LABELS } from '../types';
+import { CustomerChoice, CLEANING_METHODS, FUNCTION_TEST_ITEMS, CHANNEL_LABELS, CommunicationLog } from '../types';
 
 const customerChoiceOptions: { value: CustomerChoice; label: string; color: string }[] = [
   { value: 'repair', label: '继续维修', color: 'primary' },
@@ -49,6 +49,7 @@ export default function FollowupPage() {
     resetAll,
     saveCurrentOrder,
     addCommunicationLog,
+    updateCommunicationLog,
     removeCommunicationLog
   } = useRepairStore();
 
@@ -56,6 +57,10 @@ export default function FollowupPage() {
   const [newLogDate, setNewLogDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [newLogChannel, setNewLogChannel] = useState<'phone' | 'wechat' | 'visit' | 'other'>('phone');
   const [newLogContent, setNewLogContent] = useState('');
+  const [newLogFollowUpDate, setNewLogFollowUpDate] = useState('');
+  const [editingLogId, setEditingLogId] = useState<string | null>(null);
+  const [editFollowUpDate, setEditFollowUpDate] = useState('');
+  const [saveToast, setSaveToast] = useState(false);
 
   useEffect(() => {
     setCurrentStep(5);
@@ -80,6 +85,65 @@ export default function FollowupPage() {
     followupRecord.customerChoice !== 'pending';
 
   const isAbandoned = order.status === 'abandoned' || followupRecord.abandonRecord !== null;
+  const hasAbandonHistory = followupRecord.abandonHistory && followupRecord.abandonHistory.length > 0;
+  const previousAbandon = hasAbandonHistory ? followupRecord.abandonHistory[followupRecord.abandonHistory.length - 1] : null;
+
+  const today = new Date().toISOString().split('T')[0];
+
+  const getFollowUpStatus = (log: CommunicationLog) => {
+    if (!log.nextFollowUpDate) return null;
+    if (log.nextFollowUpDate < today) return 'overdue';
+    if (log.nextFollowUpDate === today) return 'today';
+    const daysDiff = Math.ceil((new Date(log.nextFollowUpDate).getTime() - new Date(today).getTime()) / (1000 * 60 * 60 * 24));
+    if (daysDiff <= 3) return 'soon';
+    return 'scheduled';
+  };
+
+  const getFollowUpBadge = (status: string | null) => {
+    if (!status) return null;
+    const badges = {
+      overdue: { label: '已过期', color: 'bg-danger-100 text-danger-600 border-danger-200' },
+      today: { label: '今天到期', color: 'bg-warning-100 text-warning-600 border-warning-200' },
+      soon: { label: '即将到期', color: 'bg-primary-100 text-primary-600 border-primary-200' },
+      scheduled: { label: '已安排', color: 'bg-neutral-100 text-neutral-600 border-neutral-200' }
+    };
+    return badges[status as keyof typeof badges];
+  };
+
+  const handleAddLog = () => {
+    if (!newLogContent.trim()) return;
+    const logData: Omit<CommunicationLog, 'id'> = {
+      date: newLogDate,
+      channel: newLogChannel,
+      content: newLogContent,
+      ...(newLogFollowUpDate ? { nextFollowUpDate: newLogFollowUpDate } : {})
+    };
+    addCommunicationLog(logData);
+    saveCurrentOrder();
+    setNewLogDate(new Date().toISOString().slice(0, 10));
+    setNewLogChannel('phone');
+    setNewLogContent('');
+    setNewLogFollowUpDate('');
+    setSaveToast(true);
+    setTimeout(() => setSaveToast(false), 2000);
+  };
+
+  const handleUpdateFollowUpDate = (logId: string) => {
+    if (editFollowUpDate) {
+      updateCommunicationLog(logId, { nextFollowUpDate: editFollowUpDate });
+      saveCurrentOrder();
+      setSaveToast(true);
+      setTimeout(() => setSaveToast(false), 2000);
+    }
+    setEditingLogId(null);
+    setEditFollowUpDate('');
+  };
+
+  const handleRemoveFollowUpDate = (logId: string) => {
+    updateCommunicationLog(logId, { nextFollowUpDate: undefined });
+    saveCurrentOrder();
+    setEditingLogId(null);
+  };
 
   const timelineItems: TimelineItem[] = [
     {
@@ -244,6 +308,44 @@ export default function FollowupPage() {
           </div>
         </div>
       </div>
+
+      {previousAbandon && (
+        <div className="card fade-in-up stagger-1 mb-5 border-l-4 border-l-warning-400 bg-warning-50">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-warning-100 flex items-center justify-center flex-shrink-0">
+              <History size={20} className="text-warning-600" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-semibold text-warning-800 mb-1">历史放弃记录</h3>
+              <p className="text-sm text-warning-700 mb-2">
+                {previousAbandon.reason}
+              </p>
+              <div className="flex items-center gap-4 text-xs text-warning-600 flex-wrap">
+                <span>放弃时间: {new Date(previousAbandon.abandonedAt).toLocaleString('zh-CN')}</span>
+                <span>检修费: ¥{previousAbandon.inspectionFee}</span>
+                <span>来源: {previousAbandon.abandonSource === 'quote' ? '报价阶段' : '复检阶段'}</span>
+              </div>
+              {followupRecord.abandonHistory.length > 1 && (
+                <div className="mt-3 pt-2 border-t border-warning-200">
+                  <p className="text-xs text-warning-600 mb-2">全部放弃记录 ({followupRecord.abandonHistory.length} 次):</p>
+                  <div className="space-y-1">
+                    {[...followupRecord.abandonHistory].reverse().map((item, idx) => (
+                      <div key={idx} className="text-xs text-warning-600 bg-white/50 rounded-lg p-2">
+                        <span className="font-medium">第 {followupRecord.abandonHistory.length - idx} 次: </span>
+                        {item.reason}
+                        <span className="text-warning-400 ml-2">
+                          ({new Date(item.abandonedAt).toLocaleString('zh-CN')})
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <AlertCircle size={20} className="text-warning-500 flex-shrink-0" />
+          </div>
+        </div>
+      )}
 
       <div className="card fade-in-up stagger-1 mb-5">
         <h3 className="section-title mb-4">
@@ -490,24 +592,39 @@ export default function FollowupPage() {
               onChange={(e) => setNewLogContent(e.target.value)}
             />
           </div>
+          <div>
+            <label className="label flex items-center gap-2">
+              <Calendar size={14} className="text-primary-500" />
+              下次联系日期（可选）
+            </label>
+            <input
+              type="date"
+              className="input-field"
+              value={newLogFollowUpDate}
+              onChange={(e) => setNewLogFollowUpDate(e.target.value)}
+              min={today}
+            />
+            <p className="text-xs text-neutral-400 mt-1">
+              设置后将在到期时在门店看板中提醒
+            </p>
+          </div>
           <button
-            onClick={() => {
-              if (!newLogContent.trim()) return;
-              addCommunicationLog({ date: newLogDate, channel: newLogChannel, content: newLogContent });
-              setNewLogDate(new Date().toISOString().slice(0, 10));
-              setNewLogChannel('phone');
-              setNewLogContent('');
-            }}
+            onClick={handleAddLog}
             disabled={!newLogContent.trim()}
             className="btn-primary w-full"
           >
             添加记录
+            {newLogFollowUpDate && (
+              <span className="ml-2 text-xs bg-white/20 px-2 py-0.5 rounded-full">
+                🔔 设置提醒
+              </span>
+            )}
           </button>
         </div>
 
         {followupRecord.communicationLogs.length > 0 && (
           <div className="mt-4 space-y-3">
-            {followupRecord.communicationLogs.map((log) => {
+            {[...followupRecord.communicationLogs].reverse().map((log) => {
               const channelIcon = {
                 phone: Phone,
                 wechat: MessageCircle,
@@ -515,23 +632,99 @@ export default function FollowupPage() {
                 other: MoreHorizontal,
               }[log.channel];
 
+              const followUpStatus = getFollowUpStatus(log);
+              const followUpBadge = getFollowUpBadge(followUpStatus);
+
               return (
                 <div
                   key={log.id}
-                  className="flex items-start gap-3 p-3 bg-neutral-50 rounded-xl border border-neutral-100"
+                  className={`flex items-start gap-3 p-3 bg-neutral-50 rounded-xl border ${
+                    followUpStatus === 'overdue' ? 'border-danger-200 bg-danger-50/50' :
+                    followUpStatus === 'today' ? 'border-warning-200 bg-warning-50/50' :
+                    'border-neutral-100'
+                  }`}
                 >
-                  <div className="w-8 h-8 rounded-lg bg-primary-100 text-primary-600 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                    followUpStatus === 'overdue' ? 'bg-danger-100 text-danger-600' :
+                    followUpStatus === 'today' ? 'bg-warning-100 text-warning-600' :
+                    'bg-primary-100 text-primary-600'
+                  }`}>
                     {(() => { const Icon = channelIcon; return <Icon size={16} />; })()}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 text-xs text-neutral-500 mb-1">
+                    <div className="flex items-center gap-2 text-xs text-neutral-500 mb-1 flex-wrap">
                       <span>{log.date}</span>
                       <span className="text-primary-600 font-medium">{CHANNEL_LABELS[log.channel]}</span>
+                      {followUpBadge && (
+                        <span className={`px-2 py-0.5 rounded-full border text-xs ${followUpBadge.color}`}>
+                          {followUpStatus === 'overdue' && <Bell size={10} className="inline mr-1" />}
+                          {followUpBadge.label}
+                        </span>
+                      )}
                     </div>
                     <p className="text-sm text-neutral-800 break-words">{log.content}</p>
+                    
+                    {log.nextFollowUpDate && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <Calendar size={12} className="text-neutral-400" />
+                        <span className="text-xs text-neutral-500">
+                          下次联系: {log.nextFollowUpDate}
+                        </span>
+                      </div>
+                    )}
+
+                    {editingLogId === log.id ? (
+                      <div className="mt-2 flex items-center gap-2">
+                        <input
+                          type="date"
+                          className="input-field text-xs py-1.5 min-h-[32px] flex-1"
+                          value={editFollowUpDate}
+                          onChange={(e) => setEditFollowUpDate(e.target.value)}
+                          min={today}
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => handleUpdateFollowUpDate(log.id)}
+                          className="btn-primary text-xs px-3 py-1.5"
+                        >
+                          保存
+                        </button>
+                        <button
+                          onClick={() => setEditingLogId(null)}
+                          className="btn-outline text-xs px-3 py-1.5"
+                        >
+                          取消
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="mt-2 flex items-center gap-1">
+                        <button
+                          onClick={() => {
+                            setEditingLogId(log.id);
+                            setEditFollowUpDate(log.nextFollowUpDate || '');
+                          }}
+                          className="text-xs text-primary-500 hover:text-primary-600 flex items-center gap-1"
+                        >
+                          <Bell size={12} />
+                          {log.nextFollowUpDate ? '修改提醒' : '设置提醒'}
+                        </button>
+                        {log.nextFollowUpDate && (
+                          <button
+                            onClick={() => handleRemoveFollowUpDate(log.id)}
+                            className="text-xs text-neutral-400 hover:text-danger-500 flex items-center gap-1 ml-2"
+                          >
+                            <BellOff size={12} />
+                            取消提醒
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <button
-                    onClick={() => removeCommunicationLog(log.id)}
+                    onClick={() => {
+                      removeCommunicationLog(log.id);
+                      saveCurrentOrder();
+                    }}
                     className="flex-shrink-0 w-6 h-6 rounded-full bg-neutral-200 hover:bg-danger-100 text-neutral-400 hover:text-danger-500 flex items-center justify-center transition-all"
                   >
                     <XCircle size={14} />
@@ -714,6 +907,15 @@ export default function FollowupPage() {
               <FileText size={18} />
               新建维修单
             </button>
+          </div>
+        </div>
+      )}
+
+      {saveToast && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[60] animate-fade-in">
+          <div className="bg-success-600 text-white text-sm px-4 py-2 rounded-full shadow-lg flex items-center gap-2">
+            <CheckCircle size={14} />
+            已保存
           </div>
         </div>
       )}

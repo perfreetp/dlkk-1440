@@ -15,6 +15,8 @@ export interface RepairOrder {
   status: RepairStatus;
   currentStep: number;
   previousAbandonReason?: string;
+  previousAbandonAt?: string;
+  hasOverdueFollowUp?: boolean;
 }
 
 export interface WaterDamageInfo {
@@ -109,6 +111,31 @@ export interface CommunicationLog {
   date: string;
   channel: 'phone' | 'wechat' | 'visit' | 'other';
   content: string;
+  nextFollowUpDate?: string;
+}
+
+export interface StoreConfig {
+  storeName: string;
+  contactPerson: string;
+  contactPhone: string;
+  warrantyTerms: string;
+}
+
+export interface QuoteVersion {
+  id: string;
+  version: number;
+  createdAt: string;
+  quoteEstimate: QuoteEstimate;
+  storeConfig: StoreConfig;
+  customerSignature: string;
+  notes: string;
+}
+
+export interface AbandonHistoryItem {
+  reason: string;
+  abandonedAt: string;
+  abandonSource: 'quote' | 'followup';
+  inspectionFee: number;
 }
 
 export interface FollowupRecord {
@@ -119,7 +146,9 @@ export interface FollowupRecord {
   finalStatus: string;
   completedAt: string | null;
   abandonRecord: AbandonRecord | null;
+  abandonHistory: AbandonHistoryItem[];
   communicationLogs: CommunicationLog[];
+  quoteVersions: QuoteVersion[];
 }
 
 export interface RepairOrderSnapshot {

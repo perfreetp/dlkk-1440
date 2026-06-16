@@ -14,7 +14,10 @@ import {
   CommunicationLog,
   RepairOrderSnapshot,
   FUNCTION_TEST_ITEMS,
-  AbandonRecord
+  AbandonRecord,
+  StoreConfig,
+  QuoteVersion,
+  AbandonHistoryItem
 } from '../types';
 import { generateId } from '../utils/idGenerator';
 import { generateQuote } from '../utils/quoteCalculator';
@@ -79,7 +82,16 @@ const createEmptyFollowupRecord = (): FollowupRecord => ({
   finalStatus: '',
   completedAt: null,
   abandonRecord: null,
-  communicationLogs: []
+  abandonHistory: [],
+  communicationLogs: [],
+  quoteVersions: []
+});
+
+const createDefaultStoreConfig = (): StoreConfig => ({
+  storeName: '速修手机维修中心',
+  contactPerson: '张师傅',
+  contactPhone: '138-XXXX-XXXX',
+  warrantyTerms: '本维修部位享受30天质保，人为损坏、进水复损不在质保范围内。质保期内如出现相同故障免费返修。'
 });
 
 const createNewOrder = (): RepairOrder => ({
@@ -95,6 +107,7 @@ const createNewOrder = (): RepairOrder => ({
 interface RepairStore {
   currentOrderId: string | null;
   orders: Record<string, RepairOrderSnapshot>;
+  storeConfig: StoreConfig;
 
   order: RepairOrder;
   waterDamageInfo: WaterDamageInfo;
@@ -107,6 +120,8 @@ interface RepairStore {
   loadOrder: (orderId: string) => void;
   deleteOrder: (orderId: string) => void;
   getOrderList: () => RepairOrderSnapshot[];
+  getFilteredOrderList: (filter: RepairOrder['status'] | 'all' | 'today' | 'overdue') => RepairOrderSnapshot[];
+  getStatistics: () => Record<string, number>;
   createAndSwitchOrder: () => string;
   restoreFromAbandon: (orderId: string, targetStep: 'quote' | 'followup') => void;
 
@@ -122,6 +137,7 @@ interface RepairStore {
 
   generateQuoteEstimate: () => void;
   setQuoteInspectionFee: (fee: number) => void;
+  saveQuoteVersion: (storeConfig: StoreConfig, notes: string) => QuoteVersion | null;
 
   setCustomerConfirm: (info: Partial<CustomerConfirm>) => void;
   confirmCustomer: () => void;
@@ -136,7 +152,11 @@ interface RepairStore {
   setAbandonRecord: (record: Omit<AbandonRecord, 'abandonedAt'>) => void;
 
   addCommunicationLog: (log: Omit<CommunicationLog, 'id'>) => void;
+  updateCommunicationLog: (logId: string, updates: Partial<CommunicationLog>) => void;
   removeCommunicationLog: (logId: string) => void;
+  checkOverdueFollowUps: () => string[];
+
+  setStoreConfig: (config: Partial<StoreConfig>) => void;
 
   setCurrentStep: (step: number) => void;
   setStatus: (status: RepairOrder['status']) => void;
@@ -149,6 +169,7 @@ export const useRepairStore = create<RepairStore>()(
     (set, get) => ({
       currentOrderId: null,
       orders: {},
+      storeConfig: createDefaultStoreConfig(),
 
       order: createNewOrder(),
       waterDamageInfo: createEmptyWaterDamageInfo(),
@@ -161,7 +182,7 @@ export const useRepairStore = create<RepairStore>()(
         const state = get();
         if (!state.order.id) return;
         const snapshot: RepairOrderSnapshot = {
-          order: state.order,
+          order: { ...state.order, hasOverdueFollowUp: state.checkOverdueFollowUps().length > 0 },
           waterDamageInfo: state.waterDamageInfo,
           inspectionRecord: state.inspectionRecord,
           quoteEstimate: state.quoteEstimate,
@@ -178,7 +199,7 @@ export const useRepairStore = create<RepairStore>()(
         const state = get();
         if (state.order.id && state.order.id !== orderId) {
           const currentSnapshot: RepairOrderSnapshot = {
-            order: state.order,
+            order: { ...state.order, hasOverdueFollowUp: state.checkOverdueFollowUps().length > 0 },
             waterDamageInfo: state.waterDamageInfo,
             inspectionRecord: state.inspectionRecord,
             quoteEstimate: state.quoteEstimate,
@@ -235,11 +256,44 @@ export const useRepairStore = create<RepairStore>()(
         );
       },
 
+      getFilteredOrderList: (filter) => {
+        const state = get();
+        let list = state.getOrderList();
+        const today = new Date().toISOString().split('T')[0];
+        
+        if (filter === 'all') return list;
+        if (filter === 'today') {
+          return list.filter(s => s.order.createdAt.startsWith(today));
+        }
+        if (filter === 'overdue') {
+          const overdueIds = state.checkOverdueFollowUps();
+          return list.filter(s => overdueIds.includes(s.order.id));
+        }
+        return list.filter(s => s.order.status === filter);
+      },
+
+      getStatistics: () => {
+        const state = get();
+        const list = state.getOrderList();
+        const today = new Date().toISOString().split('T')[0];
+        const overdueIds = state.checkOverdueFollowUps();
+        
+        return {
+          total: list.length,
+          today: list.filter(s => s.order.createdAt.startsWith(today)).length,
+          quoted: list.filter(s => s.order.status === 'quoted').length,
+          confirmed: list.filter(s => s.order.status === 'confirmed').length,
+          abandoned: list.filter(s => s.order.status === 'abandoned').length,
+          completed: list.filter(s => s.order.status === 'completed').length,
+          overdue: overdueIds.length
+        };
+      },
+
       createAndSwitchOrder: () => {
         const state = get();
         if (state.order.id) {
           const currentSnapshot: RepairOrderSnapshot = {
-            order: state.order,
+            order: { ...state.order, hasOverdueFollowUp: state.checkOverdueFollowUps().length > 0 },
             waterDamageInfo: state.waterDamageInfo,
             inspectionRecord: state.inspectionRecord,
             quoteEstimate: state.quoteEstimate,
@@ -277,7 +331,15 @@ export const useRepairStore = create<RepairStore>()(
         const snapshot = state.orders[orderId];
         if (!snapshot || snapshot.order.status !== 'abandoned') return;
 
-        const abandonReason = snapshot.followupRecord.abandonRecord?.reason || '';
+        const abandonRecord = snapshot.followupRecord.abandonRecord;
+        if (!abandonRecord) return;
+
+        const abandonHistoryItem: AbandonHistoryItem = {
+          reason: abandonRecord.reason,
+          abandonedAt: abandonRecord.abandonedAt,
+          abandonSource: abandonRecord.abandonSource,
+          inspectionFee: abandonRecord.inspectionFee
+        };
 
         const restoredSnapshot: RepairOrderSnapshot = {
           ...snapshot,
@@ -285,11 +347,13 @@ export const useRepairStore = create<RepairStore>()(
             ...snapshot.order,
             status: targetStep === 'quote' ? 'quoted' : 'confirmed',
             currentStep: targetStep === 'quote' ? 3 : 5,
-            previousAbandonReason: abandonReason
+            previousAbandonReason: abandonRecord.reason,
+            previousAbandonAt: abandonRecord.abandonedAt
           },
           followupRecord: {
             ...snapshot.followupRecord,
             abandonRecord: null,
+            abandonHistory: [...snapshot.followupRecord.abandonHistory, abandonHistoryItem],
             completedAt: null,
             customerChoice: 'pending'
           }
@@ -373,10 +437,12 @@ export const useRepairStore = create<RepairStore>()(
 
       generateQuoteEstimate: () => set((state) => {
         const quote = generateQuote(state.inspectionRecord);
-        return {
+        const newState = {
           quoteEstimate: quote,
-          order: { ...state.order, status: 'quoted' }
+          order: { ...state.order, status: 'quoted' as const }
         };
+        setTimeout(() => get().saveCurrentOrder(), 0);
+        return newState;
       }),
 
       setQuoteInspectionFee: (fee) => set((state) => ({
@@ -385,17 +451,46 @@ export const useRepairStore = create<RepairStore>()(
           : null
       })),
 
+      saveQuoteVersion: (storeConfig, notes) => {
+        const state = get();
+        if (!state.quoteEstimate) return null;
+        
+        const version: QuoteVersion = {
+          id: generateId(),
+          version: state.followupRecord.quoteVersions.length + 1,
+          createdAt: new Date().toISOString(),
+          quoteEstimate: JSON.parse(JSON.stringify(state.quoteEstimate)),
+          storeConfig: { ...storeConfig },
+          customerSignature: state.customerConfirm.customerSignature,
+          notes
+        };
+
+        set((state) => ({
+          followupRecord: {
+            ...state.followupRecord,
+            quoteVersions: [...state.followupRecord.quoteVersions, version]
+          }
+        }));
+
+        setTimeout(() => get().saveCurrentOrder(), 0);
+        return version;
+      },
+
       setCustomerConfirm: (info) => set((state) => ({
         customerConfirm: { ...state.customerConfirm, ...info }
       })),
 
-      confirmCustomer: () => set((state) => ({
-        customerConfirm: {
-          ...state.customerConfirm,
-          confirmedAt: new Date().toISOString()
-        },
-        order: { ...state.order, status: 'confirmed' }
-      })),
+      confirmCustomer: () => set((state) => {
+        const newState = {
+          customerConfirm: {
+            ...state.customerConfirm,
+            confirmedAt: new Date().toISOString()
+          },
+          order: { ...state.order, status: 'confirmed' as const }
+        };
+        setTimeout(() => get().saveCurrentOrder(), 0);
+        return newState;
+      }),
 
       setCleaningResult: (info) => set((state) => ({
         followupRecord: {
@@ -451,28 +546,35 @@ export const useRepairStore = create<RepairStore>()(
           };
         }
 
-        return {
+        const status: 'abandoned' | 'completed' = isAbandoned ? 'abandoned' : 'completed';
+        const newState = {
           followupRecord: newFollowupRecord,
           order: {
             ...state.order,
-            status: isAbandoned ? 'abandoned' : 'completed'
+            status
           }
         };
+        setTimeout(() => get().saveCurrentOrder(), 0);
+        return newState;
       }),
 
-      setAbandonRecord: (record) => set((state) => ({
-        followupRecord: {
-          ...state.followupRecord,
-          abandonRecord: {
-            ...record,
-            abandonedAt: new Date().toISOString()
+      setAbandonRecord: (record) => set((state) => {
+        const newState = {
+          followupRecord: {
+            ...state.followupRecord,
+            abandonRecord: {
+              ...record,
+              abandonedAt: new Date().toISOString()
+            }
+          },
+          order: {
+            ...state.order,
+            status: 'abandoned' as const
           }
-        },
-        order: {
-          ...state.order,
-          status: 'abandoned'
-        }
-      })),
+        };
+        setTimeout(() => get().saveCurrentOrder(), 0);
+        return newState;
+      }),
 
       addCommunicationLog: (log) => set((state) => ({
         followupRecord: {
@@ -484,11 +586,51 @@ export const useRepairStore = create<RepairStore>()(
         }
       })),
 
+      updateCommunicationLog: (logId, updates) => set((state) => ({
+        followupRecord: {
+          ...state.followupRecord,
+          communicationLogs: state.followupRecord.communicationLogs.map(log =>
+            log.id === logId ? { ...log, ...updates } : log
+          )
+        }
+      })),
+
       removeCommunicationLog: (logId) => set((state) => ({
         followupRecord: {
           ...state.followupRecord,
           communicationLogs: state.followupRecord.communicationLogs.filter(l => l.id !== logId)
         }
+      })),
+
+      checkOverdueFollowUps: () => {
+        const state = get();
+        const today = new Date().toISOString().split('T')[0];
+        const overdueIds: string[] = [];
+
+        Object.values(state.orders).forEach(snapshot => {
+          const hasOverdue = snapshot.followupRecord.communicationLogs.some(log => {
+            if (!log.nextFollowUpDate) return false;
+            return log.nextFollowUpDate <= today;
+          });
+          if (hasOverdue) {
+            overdueIds.push(snapshot.order.id);
+          }
+        });
+
+        if (state.followupRecord.communicationLogs.some(log => {
+          if (!log.nextFollowUpDate) return false;
+          return log.nextFollowUpDate <= today;
+        })) {
+          if (!overdueIds.includes(state.order.id)) {
+            overdueIds.push(state.order.id);
+          }
+        }
+
+        return overdueIds;
+      },
+
+      setStoreConfig: (config) => set((state) => ({
+        storeConfig: { ...state.storeConfig, ...config }
       })),
 
       setCurrentStep: (step) => set((state) => ({
@@ -516,15 +658,16 @@ export const useRepairStore = create<RepairStore>()(
     {
       name: 'repair-store',
       partialize: (state) => ({
-        currentOrderId: state.currentOrderId,
-        orders: state.orders,
-        order: state.order,
-        waterDamageInfo: state.waterDamageInfo,
-        inspectionRecord: state.inspectionRecord,
-        quoteEstimate: state.quoteEstimate,
-        customerConfirm: state.customerConfirm,
-        followupRecord: state.followupRecord
-      })
-    }
+      currentOrderId: state.currentOrderId,
+      orders: state.orders,
+      storeConfig: state.storeConfig,
+      order: state.order,
+      waterDamageInfo: state.waterDamageInfo,
+      inspectionRecord: state.inspectionRecord,
+      quoteEstimate: state.quoteEstimate,
+      customerConfirm: state.customerConfirm,
+      followupRecord: state.followupRecord
+    })
+  }
   )
 );

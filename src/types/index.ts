@@ -64,6 +64,14 @@ export interface QuoteEstimate {
   inspectionFee: number;
   validDays: number;
   validUntil: string;
+  hasPendingItems: boolean;
+}
+
+export interface AbandonRecord {
+  reason: string;
+  inspectionFee: number;
+  abandonedAt: string;
+  abandonSource: 'quote' | 'followup';
 }
 
 export interface CustomerConfirm {
@@ -102,6 +110,7 @@ export interface FollowupRecord {
   customerChoice: CustomerChoice;
   finalStatus: string;
   completedAt: string | null;
+  abandonRecord: AbandonRecord | null;
 }
 
 export interface SpeechTemplate {

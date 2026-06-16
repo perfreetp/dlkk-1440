@@ -11,7 +11,8 @@ import {
   FollowupRecord,
   CustomerChoice,
   FunctionTestItem,
-  FUNCTION_TEST_ITEMS
+  FUNCTION_TEST_ITEMS,
+  AbandonRecord
 } from '../types';
 import { generateId } from '../utils/idGenerator';
 import { generateQuote } from '../utils/quoteCalculator';
@@ -74,7 +75,8 @@ const createEmptyFollowupRecord = (): FollowupRecord => ({
   functionTest: createEmptyFunctionTestItems(),
   customerChoice: 'pending',
   finalStatus: '',
-  completedAt: null
+  completedAt: null,
+  abandonRecord: null
 });
 
 interface RepairStore {
@@ -108,6 +110,7 @@ interface RepairStore {
   setCustomerChoice: (choice: CustomerChoice) => void;
   setFinalStatus: (status: string) => void;
   completeFollowup: () => void;
+  setAbandonRecord: (record: Omit<AbandonRecord, 'abandonedAt'>) => void;
 
   setCurrentStep: (step: number) => void;
   setStatus: (status: RepairOrder['status']) => void;
@@ -261,14 +264,42 @@ export const useRepairStore = create<RepairStore>()(
         followupRecord: { ...state.followupRecord, finalStatus: status }
       })),
 
-      completeFollowup: () => set((state) => ({
-        followupRecord: {
+      completeFollowup: () => set((state) => {
+        const isAbandoned = state.followupRecord.customerChoice === 'abandon';
+        const newFollowupRecord = {
           ...state.followupRecord,
           completedAt: new Date().toISOString()
+        };
+
+        if (isAbandoned && !newFollowupRecord.abandonRecord && state.quoteEstimate) {
+          newFollowupRecord.abandonRecord = {
+            reason: state.followupRecord.finalStatus || '客户选择放弃维修',
+            inspectionFee: state.quoteEstimate.inspectionFee,
+            abandonedAt: new Date().toISOString(),
+            abandonSource: 'followup' as const
+          };
+        }
+
+        return {
+          followupRecord: newFollowupRecord,
+          order: {
+            ...state.order,
+            status: isAbandoned ? 'abandoned' : 'completed'
+          }
+        };
+      }),
+
+      setAbandonRecord: (record) => set((state) => ({
+        followupRecord: {
+          ...state.followupRecord,
+          abandonRecord: {
+            ...record,
+            abandonedAt: new Date().toISOString()
+          }
         },
         order: {
           ...state.order,
-          status: state.followupRecord.customerChoice === 'abandon' ? 'abandoned' : 'completed'
+          status: 'abandoned'
         }
       })),
 

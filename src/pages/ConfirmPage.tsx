@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { UserCheck, ShieldAlert, MessageCircle, BookOpen, Check, Copy, ChevronDown, ChevronUp } from 'lucide-react';
+import { UserCheck, ShieldAlert, MessageCircle, BookOpen, Check, Copy, ChevronDown, ChevronUp, XCircle, FileText } from 'lucide-react';
 import StepIndicator from '../components/StepIndicator';
 import SpeechBubble from '../components/SpeechBubble';
 import CaseCard from '../components/CaseCard';
@@ -40,10 +40,12 @@ export default function ConfirmPage() {
   const {
     order,
     customerConfirm,
+    followupRecord,
     setCustomerConfirm,
     confirmCustomer,
     setCurrentStep,
-    quoteEstimate
+    quoteEstimate,
+    resetAll
   } = useRepairStore();
 
   const [activeCategory, setActiveCategory] = useState<string>('全部');
@@ -53,6 +55,69 @@ export default function ConfirmPage() {
   useEffect(() => {
     setCurrentStep(4);
   }, [setCurrentStep]);
+
+  const handleNewOrder = () => {
+    resetAll();
+    navigate('/register');
+  };
+
+  const isAbandoned = order.status === 'abandoned' || followupRecord.abandonRecord !== null;
+
+  if (isAbandoned && followupRecord.abandonRecord) {
+    return (
+      <div className="page-container flex items-center justify-center py-12">
+        <div className="card text-center max-w-md w-full">
+          <div className="w-20 h-20 rounded-full bg-gradient-to-br from-danger-500 to-warning-500 flex items-center justify-center mx-auto mb-6 shadow-lg shadow-danger-200">
+            <XCircle size={40} className="text-white" />
+          </div>
+          <h2 className="font-serif text-2xl font-bold text-neutral-800 mb-4">
+            已按放弃维修结案
+          </h2>
+          <div className="bg-neutral-50 rounded-xl p-4 mb-6 text-left space-y-3">
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-neutral-500">客户姓名</span>
+              <span className="font-medium text-neutral-800">{order.customerName || '未填写'}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-neutral-500">手机型号</span>
+              <span className="font-medium text-neutral-800">{order.phoneModel || '未填写'}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-neutral-500">登记时间</span>
+              <span className="font-medium text-neutral-800">
+                {new Date(order.createdAt).toLocaleString('zh-CN')}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-neutral-500">放弃时间</span>
+              <span className="font-medium text-neutral-800">
+                {new Date(followupRecord.abandonRecord.abandonedAt).toLocaleString('zh-CN')}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-neutral-500">检修费</span>
+              <span className="font-bold text-coral-600 text-lg">
+                ¥{followupRecord.abandonRecord.inspectionFee}
+              </span>
+            </div>
+            <div className="pt-2 border-t border-neutral-200">
+              <p className="text-sm text-neutral-500 mb-1">放弃原因</p>
+              <p className="font-medium text-neutral-800">
+                {followupRecord.abandonRecord.reason}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={handleNewOrder}
+            className="w-full btn-primary"
+          >
+            <FileText size={18} />
+            新建维修单
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const canProceed = customerConfirm.understood && customerConfirm.customerSignature;
 

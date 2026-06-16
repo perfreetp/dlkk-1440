@@ -4,6 +4,9 @@ const BASE_PRICES = {
   cleaning: 150,
   deepCleaning: 300,
   flexCable: 80,
+  flexCableScreen: 120,
+  flexCableInterface: 100,
+  flexCableMotherboard: 150,
   screenRisk: 200,
   motherboardRepair: 300,
   motherboardAdvanced: 800,
@@ -13,6 +16,7 @@ const BASE_PRICES = {
   cameraReplacement: 200,
   speakerReplacement: 100,
   inspectionFee: 50,
+  pendingRiskReserve: 150,
 };
 
 const SEVERITY_MULTIPLIER: Record<InspectionStatus, number> = {
@@ -27,16 +31,116 @@ function countSeverity(record: InspectionRecord) {
   let severeCount = 0;
   let pendingCount = 0;
 
-  (Object.values(record) as { status: InspectionStatus }[]).forEach(item => {
-    if (item.status === 'mild') mildCount++;
-    if (item.status === 'severe') severeCount++;
-    if (item.status === 'pending') pendingCount++;
+  const pendingParts: string[] = [];
+  const mildParts: string[] = [];
+  const severeParts: string[] = [];
+
+  const partNames: Record<string, string> = {
+    appearance: '外观',
+    screen: '屏幕',
+    motherboard: '主板',
+    interface: '接口',
+    battery: '电池',
+    camera: '摄像头',
+    speaker: '扬声器'
+  };
+
+  Object.entries(record).forEach(([key, item]) => {
+    const status = (item as { status: InspectionStatus }).status;
+    const partName = partNames[key] || key;
+    if (status === 'mild') {
+      mildCount++;
+      mildParts.push(partName);
+    }
+    if (status === 'severe') {
+      severeCount++;
+      severeParts.push(partName);
+    }
+    if (status === 'pending') {
+      pendingCount++;
+      pendingParts.push(partName);
+    }
   });
 
-  return { mildCount, severeCount, pendingCount };
+  return { mildCount, severeCount, pendingCount, pendingParts, mildParts, severeParts };
+}
+
+function addFlexCableItems(items: QuoteItem[], record: InspectionRecord, tier: 'low' | 'mid' | 'high') {
+  if (record.screen.status !== 'normal') {
+    const price = tier === 'low' ? BASE_PRICES.flexCable :
+                  tier === 'mid' ? BASE_PRICES.flexCableScreen :
+                  BASE_PRICES.flexCableScreen + 50;
+    items.push({
+      name: '屏幕排线检测/更换',
+      description: '显示排线、触摸排线腐蚀清洁或更换',
+      price,
+      included: true
+    });
+  }
+
+  if (record.interface.status !== 'normal') {
+    const price = tier === 'low' ? BASE_PRICES.flexCable :
+                  tier === 'mid' ? BASE_PRICES.flexCableInterface :
+                  BASE_PRICES.flexCableInterface + 30;
+    items.push({
+      name: '尾插排线检修',
+      description: '充电排线、数据接口排线清洁或更换',
+      price,
+      included: true
+    });
+  }
+
+  if (record.motherboard.status !== 'normal') {
+    const price = tier === 'low' ? 0 :
+                  tier === 'mid' ? BASE_PRICES.flexCableMotherboard :
+                  BASE_PRICES.flexCableMotherboard + 50;
+    if (price > 0) {
+      items.push({
+        name: '主板连接排线',
+        description: '主板与各部件连接排线检测修复',
+        price,
+        included: true
+      });
+    }
+  }
+
+  if (record.camera.status !== 'normal' && tier !== 'low') {
+    items.push({
+      name: '摄像头排线清洁',
+      description: '前后摄像头排线接口腐蚀处理',
+      price: BASE_PRICES.flexCable,
+      included: true
+    });
+  }
+
+  if (record.speaker.status !== 'normal' && tier !== 'low') {
+    items.push({
+      name: '音频排线检修',
+      description: '扬声器、听筒排线清洁修复',
+      price: BASE_PRICES.flexCable,
+      included: true
+    });
+  }
+}
+
+function addPendingRiskItem(items: QuoteItem[], pendingParts: string[], tier: 'low' | 'mid' | 'high') {
+  if (pendingParts.length === 0) return;
+
+  const multiplier = tier === 'low' ? 0.5 : tier === 'mid' ? 1 : 1.5;
+  const price = Math.round(BASE_PRICES.pendingRiskReserve * pendingParts.length * multiplier);
+
+  if (price > 0) {
+    items.push({
+      name: '待拆检风险备用金',
+      description: `${pendingParts.join('、')}需进一步拆检，此为预估风险备用金，多退少补`,
+      price,
+      included: true
+    });
+  }
 }
 
 function generateLowTier(record: InspectionRecord): QuoteTier {
+  const { pendingParts } = countSeverity(record);
   const items: QuoteItem[] = [];
 
   items.push({
@@ -46,6 +150,8 @@ function generateLowTier(record: InspectionRecord): QuoteTier {
     included: true
   });
 
+  addFlexCableItems(items, record, 'low');
+
   if (record.interface.status !== 'normal') {
     items.push({
       name: '接口清洁处理',
@@ -54,6 +160,8 @@ function generateLowTier(record: InspectionRecord): QuoteTier {
       included: true
     });
   }
+
+  addPendingRiskItem(items, pendingParts, 'low');
 
   const total = items.reduce((sum, item) => sum + item.price, 0);
 
@@ -67,7 +175,7 @@ function generateLowTier(record: InspectionRecord): QuoteTier {
 }
 
 function generateMidTier(record: InspectionRecord): QuoteTier {
-  const { mildCount, severeCount, pendingCount } = countSeverity(record);
+  const { mildCount, severeCount, pendingCount, pendingParts, mildParts } = countSeverity(record);
   const items: QuoteItem[] = [];
 
   items.push({
@@ -78,13 +186,16 @@ function generateMidTier(record: InspectionRecord): QuoteTier {
   });
 
   if (mildCount > 0 || pendingCount > 0) {
+    const allParts = [...mildParts, ...pendingParts];
     items.push({
       name: '腐蚀部件处理',
-      description: `对${mildCount + pendingCount}处轻微腐蚀部位进行精细处理`,
+      description: `对${allParts.join('、')}等${mildCount + pendingCount}处腐蚀部位进行精细处理`,
       price: mildCount * 80 + pendingCount * 100,
       included: true
     });
   }
+
+  addFlexCableItems(items, record, 'mid');
 
   if (record.battery.status !== 'normal') {
     items.push({
@@ -111,6 +222,8 @@ function generateMidTier(record: InspectionRecord): QuoteTier {
     included: true
   });
 
+  addPendingRiskItem(items, pendingParts, 'mid');
+
   const total = items.reduce((sum, item) => sum + item.price, 0);
 
   return {
@@ -123,7 +236,7 @@ function generateMidTier(record: InspectionRecord): QuoteTier {
 }
 
 function generateHighTier(record: InspectionRecord): QuoteTier {
-  const { mildCount, severeCount, pendingCount } = countSeverity(record);
+  const { mildCount, severeCount, pendingCount, pendingParts, severeParts } = countSeverity(record);
   const items: QuoteItem[] = [];
 
   items.push({
@@ -134,13 +247,16 @@ function generateHighTier(record: InspectionRecord): QuoteTier {
   });
 
   if (severeCount > 0 || pendingCount > 0) {
+    const allParts = [...severeParts, ...pendingParts];
     items.push({
       name: '主板芯片级维修',
-      description: `对${severeCount + pendingCount}处严重腐蚀部位进行芯片级维修`,
+      description: `对${allParts.join('、')}等${severeCount + pendingCount}处严重腐蚀部位进行芯片级维修`,
       price: BASE_PRICES.motherboardAdvanced + severeCount * 200,
       included: true
     });
   }
+
+  addFlexCableItems(items, record, 'high');
 
   if (record.screen.status !== 'normal') {
     items.push({
@@ -183,6 +299,8 @@ function generateHighTier(record: InspectionRecord): QuoteTier {
     included: true
   });
 
+  addPendingRiskItem(items, pendingParts, 'high');
+
   items.push({
     name: '90天质保',
     description: '维修部位享受90天质保服务',
@@ -214,12 +332,15 @@ export function generateQuote(record: InspectionRecord): QuoteEstimate {
   const validDate = new Date();
   validDate.setDate(validDate.getDate() + validDays);
 
+  const { pendingCount } = countSeverity(record);
+
   return {
     lowTier: generateLowTier(record),
     midTier: generateMidTier(record),
     highTier: generateHighTier(record),
     inspectionFee: calculateInspectionFee(record),
     validDays,
-    validUntil: validDate.toISOString().split('T')[0]
+    validUntil: validDate.toISOString().split('T')[0],
+    hasPendingItems: pendingCount > 0
   };
 }

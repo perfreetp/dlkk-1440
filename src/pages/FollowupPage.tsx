@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   History, Droplets, Zap, Activity, CheckCircle,
-  Clock, ArrowLeft, RotateCcw, User, FileText
+  Clock, ArrowLeft, RotateCcw, User, FileText, XCircle
 } from 'lucide-react';
 import StepIndicator from '../components/StepIndicator';
 import Timeline, { TimelineItem } from '../components/Timeline';
@@ -69,6 +69,8 @@ export default function FollowupPage() {
     followupRecord.secondInspection.currentReading &&
     followupRecord.functionTest.every(t => t.status !== 'pending') &&
     followupRecord.customerChoice !== 'pending';
+
+  const isAbandoned = order.status === 'abandoned' || followupRecord.abandonRecord !== null;
 
   const timelineItems: TimelineItem[] = [
     {
@@ -155,6 +157,68 @@ export default function FollowupPage() {
       )
     }
   ];
+
+  if (isAbandoned && followupRecord.abandonRecord) {
+    return (
+      <div className="page-container flex items-center justify-center py-12">
+        <div className="card text-center max-w-md w-full">
+          <div className="w-20 h-20 rounded-full bg-gradient-to-br from-danger-500 to-warning-500 flex items-center justify-center mx-auto mb-6 shadow-lg shadow-danger-200">
+            <XCircle size={40} className="text-white" />
+          </div>
+          <h2 className="font-serif text-2xl font-bold text-neutral-800 mb-4">
+            已按放弃维修结案
+          </h2>
+          <div className="bg-neutral-50 rounded-xl p-4 mb-6 text-left space-y-3">
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-neutral-500">客户姓名</span>
+              <span className="font-medium text-neutral-800">{order.customerName || '未填写'}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-neutral-500">手机型号</span>
+              <span className="font-medium text-neutral-800">{order.phoneModel || '未填写'}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-neutral-500">登记时间</span>
+              <span className="font-medium text-neutral-800">
+                {new Date(order.createdAt).toLocaleString('zh-CN')}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-neutral-500">放弃时间</span>
+              <span className="font-medium text-neutral-800">
+                {new Date(followupRecord.abandonRecord.abandonedAt).toLocaleString('zh-CN')}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-neutral-500">放弃来源</span>
+              <span className="font-medium text-neutral-800">
+                {followupRecord.abandonRecord.abandonSource === 'quote' ? '报价阶段' : '复检阶段'}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-neutral-500">检修费</span>
+              <span className="font-bold text-coral-600 text-lg">
+                ¥{followupRecord.abandonRecord.inspectionFee}
+              </span>
+            </div>
+            <div className="pt-2 border-t border-neutral-200">
+              <p className="text-sm text-neutral-500 mb-1">放弃原因</p>
+              <p className="font-medium text-neutral-800">
+                {followupRecord.abandonRecord.reason}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={handleNewOrder}
+            className="w-full btn-primary"
+          >
+            <FileText size={18} />
+            新建维修单
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="page-container">
@@ -490,7 +554,7 @@ export default function FollowupPage() {
               维修单已完成！
             </h3>
             <p className="text-neutral-600 mb-2">
-              客户：{order.customerName}
+              客户：{order.customerName || '未填写'}
             </p>
             <p className="text-neutral-500 text-sm mb-6">
               完成时间：{new Date(followupRecord.completedAt).toLocaleString('zh-CN')}
@@ -504,6 +568,44 @@ export default function FollowupPage() {
                 新建维修单
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {order.status === 'abandoned' && followupRecord.completedAt && followupRecord.abandonRecord && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md animate-scale-in text-center">
+            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-danger-500 to-warning-500 flex items-center justify-center mx-auto mb-6 shadow-lg shadow-danger-200">
+              <XCircle size={40} className="text-white" />
+            </div>
+            <h3 className="font-serif text-2xl font-bold text-neutral-800 mb-3">
+              已按放弃维修结案
+            </h3>
+            <p className="text-neutral-600 mb-2">
+              客户：{order.customerName || '未填写'}
+            </p>
+            <p className="text-neutral-500 text-sm mb-4">
+              结案时间：{new Date(followupRecord.completedAt).toLocaleString('zh-CN')}
+            </p>
+            <div className="bg-danger-50 rounded-xl p-4 mb-4 mx-4">
+              <p className="text-sm text-danger-700 mb-2">需收取检修费</p>
+              <p className="text-3xl font-bold text-coral-600">
+                ¥{followupRecord.abandonRecord.inspectionFee}
+              </p>
+            </div>
+            <div className="text-left bg-neutral-50 rounded-xl p-4 mb-6">
+              <p className="text-xs text-neutral-500 mb-1">放弃原因</p>
+              <p className="text-sm text-neutral-800">
+                {followupRecord.abandonRecord.reason}
+              </p>
+            </div>
+            <button
+              onClick={handleNewOrder}
+              className="w-full btn-primary"
+            >
+              <FileText size={18} />
+              新建维修单
+            </button>
           </div>
         </div>
       )}

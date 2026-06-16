@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Camera, Monitor, Cpu, Usb, Battery, Camera as CameraIcon, Volume2, MessageSquare } from 'lucide-react';
+import { Search, Camera, Monitor, Cpu, Usb, Battery, Camera as CameraIcon, Volume2, MessageSquare, XCircle, FileText } from 'lucide-react';
 import StepIndicator from '../components/StepIndicator';
 import { StatusSelector } from '../components/StatusBadge';
 import PhotoCard from '../components/PhotoCard';
@@ -24,24 +24,31 @@ export default function InspectionPage() {
   const {
     order,
     inspectionRecord,
+    followupRecord,
     setInspectionStatus,
     setInspectionRemark,
     addPhoto,
     removePhoto,
     setCurrentStep,
-    generateQuoteEstimate
+    generateQuoteEstimate,
+    resetAll
   } = useRepairStore();
 
   useEffect(() => {
     setCurrentStep(2);
   }, [setCurrentStep]);
 
-  const allChecked = parts.every(part => inspectionRecord[part].status !== 'pending');
+  const allChecked = true;
 
   const handleNext = () => {
     generateQuoteEstimate();
     setCurrentStep(3);
     navigate('/quote');
+  };
+
+  const handleNewOrder = () => {
+    resetAll();
+    navigate('/register');
   };
 
   const getPartCardClass = (part: InspectionPart) => {
@@ -51,6 +58,64 @@ export default function InspectionPage() {
     if (status === 'severe') return 'border-danger-300';
     return 'border-transparent';
   };
+
+  const isAbandoned = order.status === 'abandoned' || followupRecord.abandonRecord !== null;
+
+  if (isAbandoned && followupRecord.abandonRecord) {
+    return (
+      <div className="page-container flex items-center justify-center py-12">
+        <div className="card text-center max-w-md w-full">
+          <div className="w-20 h-20 rounded-full bg-gradient-to-br from-danger-500 to-warning-500 flex items-center justify-center mx-auto mb-6 shadow-lg shadow-danger-200">
+            <XCircle size={40} className="text-white" />
+          </div>
+          <h2 className="font-serif text-2xl font-bold text-neutral-800 mb-4">
+            已按放弃维修结案
+          </h2>
+          <div className="bg-neutral-50 rounded-xl p-4 mb-6 text-left space-y-3">
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-neutral-500">客户姓名</span>
+              <span className="font-medium text-neutral-800">{order.customerName || '未填写'}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-neutral-500">手机型号</span>
+              <span className="font-medium text-neutral-800">{order.phoneModel || '未填写'}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-neutral-500">登记时间</span>
+              <span className="font-medium text-neutral-800">
+                {new Date(order.createdAt).toLocaleString('zh-CN')}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-neutral-500">放弃时间</span>
+              <span className="font-medium text-neutral-800">
+                {new Date(followupRecord.abandonRecord.abandonedAt).toLocaleString('zh-CN')}
+              </span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-neutral-500">检修费</span>
+              <span className="font-bold text-coral-600 text-lg">
+                ¥{followupRecord.abandonRecord.inspectionFee}
+              </span>
+            </div>
+            <div className="pt-2 border-t border-neutral-200">
+              <p className="text-sm text-neutral-500 mb-1">放弃原因</p>
+              <p className="font-medium text-neutral-800">
+                {followupRecord.abandonRecord.reason}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={handleNewOrder}
+            className="w-full btn-primary"
+          >
+            <FileText size={18} />
+            新建维修单
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="page-container">
@@ -180,11 +245,9 @@ export default function InspectionPage() {
             生成报价
           </button>
         </div>
-        {!allChecked && (
-          <p className="text-center text-xs text-neutral-400 mt-2">
-            请完成所有 {parts.length} 个部位的检查
-          </p>
-        )}
+        <p className="text-center text-xs text-neutral-400 mt-2">
+          选择"待拆检"表示该部位需进一步拆解检查，报价中将包含风险备用金
+        </p>
       </div>
     </div>
   );
